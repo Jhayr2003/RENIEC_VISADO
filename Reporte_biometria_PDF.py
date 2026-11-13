@@ -9,6 +9,7 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.lib.enums import TA_RIGHT
+from reportlab.pdfgen import canvas
 from datetime import datetime
 
 
@@ -25,6 +26,34 @@ def formatear_codigo(valor, longitud):
         except (ValueError, TypeError):
             pass
     return s.zfill(longitud)
+
+
+class NumberedCanvas(canvas.Canvas):
+    """Canvas que dibuja 'Pág. XX de YY' en cada página al finalizar el build."""
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        self.setFont("Helvetica", 9)
+        self.setFillColor(colors.black)
+        self.drawRightString(
+            A4[0] - 2 * cm,
+            1 * cm,
+            f"Pág. {self._pageNumber} de {page_count}"
+        )
 
 
 class GeneradorPDFBiometrico:
@@ -277,9 +306,6 @@ class GeneradorPDFBiometrico:
                     P = Paragraph(titulo_texto, styles['Title'])
                     w, h = P.wrap(doc.width, doc.topMargin)
                     P.drawOn(canvas, doc.leftMargin, A4[1] - h - 0.5 * cm)
-                    page_num_text = f"Página {canvas.getPageNumber()}"
-                    canvas.setFont("Helvetica", 9)
-                    canvas.drawRightString(A4[0] - doc.rightMargin, 1 * cm, page_num_text)
                     canvas.restoreState()
                 return hf
 
@@ -323,7 +349,7 @@ class GeneradorPDFBiometrico:
             elements.append(Spacer(1, 0.3 * cm))
             elements.append(Paragraph(f"<b>TOTAL  : {total_general:,}</b>", right_style))
 
-            doc.build(elements)
+            doc.build(elements, canvasmaker=NumberedCanvas)
 
             self.status_var.set(f"✅ PDF generado exitosamente: {os.path.basename(pdf_path)}")
             messagebox.showinfo(
