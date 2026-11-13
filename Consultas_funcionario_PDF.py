@@ -15,6 +15,43 @@ from reportlab.platypus import (
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.lib.units import mm
+
+
+# ============================================================
+# 🧾 CANVAS CON NUMERACIÓN "Pág. XX de YY"
+# ============================================================
+
+class NumberedCanvas(pdfcanvas.Canvas):
+    """
+    Canvas que acumula los estados de cada página y, al final,
+    imprime 'Pág. XX de YY' en el pie de cada una.
+    """
+
+    def __init__(self, *args, **kwargs):
+        pdfcanvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page_number(num_pages)
+            pdfcanvas.Canvas.showPage(self)
+        pdfcanvas.Canvas.save(self)
+
+    def _draw_page_number(self, page_count):
+        self.setFont("Helvetica", 8)
+        self.drawCentredString(
+            A4[0] / 2.0,
+            12 * mm,
+            f"Pág. {self._pageNumber} de {page_count}"
+        )
 
 
 # ============================================================
@@ -198,8 +235,8 @@ def generar_pdf(ruta_gerencia, ruta_funcionario, ruta_funcionario_1,
         ):
 
             titulo = Paragraph(
-                "CONSULTA RENIEC POR FUNCIONARIO<br/>"
-                "SERVICIO DE LÍNEA DEDICADA - "
+                "CONSULTAS RENIEC A FUNCIONARIOS BN<br/>"
+                "SERVICIO LÍNEA DEDICADA - "
                 + periodo
                 + " "
                 + anio,
@@ -264,7 +301,7 @@ def generar_pdf(ruta_gerencia, ruta_funcionario, ruta_funcionario_1,
             elements.append(resumen)
             elements.append(PageBreak())
 
-        doc.build(elements)
+        doc.build(elements, canvasmaker=NumberedCanvas)
 
         return pdf_path, len(df_union_1)
 
