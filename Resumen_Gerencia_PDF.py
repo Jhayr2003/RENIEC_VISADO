@@ -8,7 +8,36 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
 from datetime import datetime
+
+
+class NumberedCanvas(canvas.Canvas):
+    """Canvas que dibuja 'Pág. XX de YY' en cada página al finalizar el build."""
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        self.setFont("Helvetica", 9)
+        self.setFillColor(colors.black)
+        self.drawRightString(
+            A4[0] - 2 * cm,
+            1.2 * cm,
+            f"Pág. {self._pageNumber} de {page_count}"
+        )
 
 
 class ResumenGerenciaGUI:
@@ -400,7 +429,7 @@ class ResumenGerenciaGUI:
             total_paragraph = Paragraph(f"<b>TOTAL GENERAL: {total:,}</b>", estilo_derecha)
             elementos.append(total_paragraph)
 
-            doc.build(elementos)
+            doc.build(elementos, canvasmaker=NumberedCanvas)
 
             self.status_var.set(f"✅ PDF generado: {nombre_base}")
             messagebox.showinfo("Éxito", f"PDF generado correctamente en:\n{ruta_pdf}")
