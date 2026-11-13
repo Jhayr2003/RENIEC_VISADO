@@ -10,7 +10,38 @@ from reportlab.platypus import (BaseDocTemplate, Frame, PageTemplate, Table,
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.lib import colors
+from reportlab.pdfgen import canvas
 from datetime import datetime
+
+
+# ============================================================
+# Canvas personalizado para numerar páginas: "Pág. XX de YY"
+# ============================================================
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        num_pages = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(num_pages)
+            canvas.Canvas.showPage(self)
+        canvas.Canvas.save(self)
+
+    def draw_page_number(self, page_count):
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.drawCentredString(
+            A4[0] / 2, 25,
+            f"Pág. {self._pageNumber} de {page_count}"
+        )
+        self.restoreState()
 
 
 class PDFGeneratorGUI:
@@ -56,7 +87,7 @@ class PDFGeneratorGUI:
         frame_periodo.grid(row=3, column=0, columnspan=3, pady=5)
         tk.Label(frame_periodo, text="Periodo:", font=("Arial", 10)).pack(side="left", padx=5)
         tk.Entry(frame_periodo, textvariable=self.periodo_var, width=15, font=("Arial", 10)).pack(side="left", padx=5)
-        tk.Label(frame_periodo, text="AÃ±o:", font=("Arial", 10)).pack(side="left", padx=5)
+        tk.Label(frame_periodo, text="Año:", font=("Arial", 10)).pack(side="left", padx=5)
         tk.Entry(frame_periodo, textvariable=self.anio_var, width=10, font=("Arial", 10)).pack(side="left", padx=5)
 
         # Checkbutton bloqueado y siempre marcado
@@ -72,7 +103,7 @@ class PDFGeneratorGUI:
 
         ttk.Separator(main_frame, orient='horizontal').grid(row=5, column=0, columnspan=3, sticky="ew", pady=10)
 
-        tk.Label(main_frame, text="3. Carpeta de salida (raÃ­z):", font=("Arial", 10, "bold")).grid(row=6, column=0, sticky="w", pady=5)
+        tk.Label(main_frame, text="3. Carpeta de salida (raíz):", font=("Arial", 10, "bold")).grid(row=6, column=0, sticky="w", pady=5)
         tk.Entry(main_frame, textvariable=self.salida_var, width=50, state="readonly").grid(row=6, column=1, padx=5, pady=5)
         tk.Button(main_frame, text="Seleccionar...", command=self.seleccionar_carpeta_salida,
                   bg="#e3f2fd", width=12).grid(row=6, column=2, padx=5, pady=5)
@@ -88,13 +119,13 @@ class PDFGeneratorGUI:
         tk.Button(frame_botones, text="SALIR", command=self.root.quit,
                   bg="#f44336", fg="white", font=("Arial", 10), width=10, height=2).pack(side="left", padx=10)
 
-        self.status_var = tk.StringVar(value="âœ… Listo para procesar...")
+        self.status_var = tk.StringVar(value="Listo para procesar...")
         status_bar = tk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w",
                               font=("Arial", 9), bg="#f0f0f0")
         status_bar.pack(side="bottom", fill="x", padx=5, pady=5)
 
     # ------------------------------------------------------------------
-    # SelecciÃ³n de archivos y carpeta
+    # Selección de archivos y carpeta
     # ------------------------------------------------------------------
     def seleccionar_archivo(self, tipo):
         archivo = filedialog.askopenfilename(
@@ -110,7 +141,7 @@ class PDFGeneratorGUI:
 
     def seleccionar_carpeta_salida(self):
         carpeta = filedialog.askdirectory(
-            title="Selecciona la carpeta raÃ­z donde se guardarÃ¡n los PDFs",
+            title="Selecciona la carpeta raíz donde se guardarán los PDFs",
             initialdir=os.path.dirname(self.salida_var.get()) if self.salida_var.get() else None
         )
         if carpeta:
@@ -129,7 +160,7 @@ class PDFGeneratorGUI:
         self.gerencia_var.set("")
         self.personas_var.set("")
         self.salida_var.set("")
-        self.status_var.set("âœ… Campos limpiados")
+        self.status_var.set("Campos limpiados")
 
     # ------------------------------------------------------------------
     # Lectura segura de CSV
@@ -146,7 +177,7 @@ class PDFGeneratorGUI:
             return df
 
     # ------------------------------------------------------------------
-    # NormalizaciÃ³n de columnas de PERSONAS (DNI â†’ CODIGO, NOMBRES â†’ NOMBRE)
+    # Normalización de columnas de PERSONAS
     # ------------------------------------------------------------------
     def _normalizar_personas(self, df):
         renombres = {}
@@ -167,7 +198,7 @@ class PDFGeneratorGUI:
         return df
 
     # ------------------------------------------------------------------
-    # NormalizaciÃ³n de columnas de GERENCIA
+    # Normalización de columnas de GERENCIA
     # ------------------------------------------------------------------
     def _normalizar_gerencia(self, df):
         columnas = list(df.columns)
@@ -207,7 +238,7 @@ class PDFGeneratorGUI:
             return
 
         try:
-            self.status_var.set("â³ Procesando archivos...")
+            self.status_var.set("Procesando archivos...")
             self.root.update()
 
             periodo = self.periodo_var.get().strip().upper()
@@ -223,8 +254,8 @@ class PDFGeneratorGUI:
             df_gerencia = self._leer_csv(self.gerencia_var.get())
             df_personas = self._leer_csv(self.personas_var.get())
 
-            df_gerencia.columns = [col.replace('Ã¯Â»Â¿', '').replace('\ufeff', '').strip() for col in df_gerencia.columns]
-            df_personas.columns = [col.replace('Ã¯Â»Â¿', '').replace('\ufeff', '').strip() for col in df_personas.columns]
+            df_gerencia.columns = [col.replace('ï»¿', '').replace('\ufeff', '').strip() for col in df_gerencia.columns]
+            df_personas.columns = [col.replace('ï»¿', '').replace('\ufeff', '').strip() for col in df_personas.columns]
 
             # ----------------------------
             # Normalizar columnas
@@ -236,7 +267,7 @@ class PDFGeneratorGUI:
             print("Columnas PERSONAS:", df_personas.columns.tolist())
 
             # ----------------------------
-            # Formatear cÃ³digos
+            # Formatear códigos
             # ----------------------------
             df_gerencia["CODIGO_DNI"] = df_gerencia["CODIGO_DNI"].astype(str).str.strip().str.zfill(8)
             df_gerencia["CODIGO_UND"] = df_gerencia["CODIGO_UND"].astype(str).str.strip().str.zfill(4)
@@ -249,7 +280,7 @@ class PDFGeneratorGUI:
                 df_personas["NOMBRE"] = "SIN NOMBRE"
             df_personas["NOMBRE"] = (
                 df_personas["NOMBRE"].astype(str)
-                .str.replace("â– ", "", regex=False)
+                .str.replace("■", "", regex=False)
                 .str.replace(r"[^\x00-\x7F]+", "", regex=True)
                 .str.strip()
             )
@@ -278,7 +309,7 @@ class PDFGeneratorGUI:
             df_final["NOMBRE"] = df_final["NOMBRE"].fillna("")
             df_final = df_final.drop(columns=["CODIGO_DNI"], errors="ignore")
 
-            print("ðŸ“Š Cantidad de registros por GERENCIA:")
+            print("Cantidad de registros por GERENCIA:")
             for g, c in df_final["GERENCIA"].value_counts().items():
                 print(f"- {g}: {c}")
 
@@ -303,12 +334,11 @@ class PDFGeneratorGUI:
             )
 
             # =========================================================================
-            # CAMBIO APLICADO AQUÃ (TÃ­tulo dinÃ¡mico con ajuste de lÃ­nea)
+            # Título dinámico con ajuste de línea
             # =========================================================================
-            def encabezado(canvas, doc, gerencia):
-                canvas.saveState()
-                
-                # 1. Creamos un estilo para el tÃ­tulo que permita ajuste de lÃ­nea
+            def encabezado(canvas_obj, doc, gerencia):
+                canvas_obj.saveState()
+
                 style_header_title = ParagraphStyle(
                     name="header_title",
                     fontName="Helvetica-Bold",
@@ -316,21 +346,17 @@ class PDFGeneratorGUI:
                     alignment=TA_CENTER,
                     leading=15
                 )
-                
-                # 2. Creamos el pÃ¡rrafo con el texto dinÃ¡mico
-                texto_titulo = f"CONSULTAS EN LINEA DE LA GERENCIA DE {gerencia}"
+
+                texto_titulo = f"CONSULTAS RENIEC POR {gerencia}"
                 parrafo_titulo = Paragraph(texto_titulo, style_header_title)
-                
-                # 3. Calculamos el tamaÃ±o y lo dibujamos
-                # Usamos el ancho de la pÃ¡gina (doc.width) para que haga el salto de lÃ­nea si es necesario
+
                 ancho, alto = parrafo_titulo.wrap(doc.width, doc.topMargin)
-                parrafo_titulo.drawOn(canvas, doc.leftMargin, A4[1] - 40 - alto)
-                
-                # 4. El subtÃ­tulo lo dibujamos debajo, restando la altura (alto) que ocupÃ³ el tÃ­tulo
-                canvas.setFont("Helvetica", 9)
-                canvas.drawCentredString(A4[0] / 2, A4[1] - 40 - alto - 15, f"{periodo} {anio}")
-                
-                canvas.restoreState()
+                parrafo_titulo.drawOn(canvas_obj, doc.leftMargin, A4[1] - 40 - alto)
+
+                canvas_obj.setFont("Helvetica", 9)
+                canvas_obj.drawCentredString(A4[0] / 2, A4[1] - 40 - alto - 15, f"SERVICIO LÍNEA DEDICADA - {periodo} {anio}")
+
+                canvas_obj.restoreState()
 
             # ----------------------------
             # Generar un PDF por (GERENCIA, DESCRIPCION)
@@ -340,14 +366,14 @@ class PDFGeneratorGUI:
                 gerencia_limpia = limpiar_nombre_archivo(gerencia)
                 desc_limpia = limpiar_nombre_archivo(descripcion)
 
-                # Si hay mÃ¡s de una descripciÃ³n por gerencia, incluirla en el nombre
+                # Si hay más de una descripción por gerencia, incluirla en el nombre
                 conteo_desc = df_final[df_final["GERENCIA"] == gerencia]["DESCRIPCION"].nunique()
                 if conteo_desc > 1:
                     nombre_base = f"{anio}-{periodo}-{gerencia_limpia} - {desc_limpia}.pdf"
                 else:
                     nombre_base = f"{anio}-{periodo}-{gerencia_limpia}.pdf"
 
-                # >>> Timestamp SIEMPRE aplicado (checkbox bloqueado en True)
+                # Timestamp SIEMPRE aplicado
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                 nombre_base = nombre_base.replace(".pdf", f"_{timestamp}.pdf")
 
@@ -358,7 +384,7 @@ class PDFGeneratorGUI:
                 template = PageTemplate(
                     id="reporte",
                     frames=frame,
-                    onPage=lambda canvas, doc, g=gerencia: encabezado(canvas, doc, g)
+                    onPage=lambda canvas_obj, doc, g=gerencia: encabezado(canvas_obj, doc, g)
                 )
                 doc.addPageTemplates([template])
 
@@ -366,8 +392,8 @@ class PDFGeneratorGUI:
                 df_ger = df_ger.sort_values(["CODIGO_UND", "NOMBRE"], ascending=[True, True])
 
                 data = [[
-                    Paragraph("Unidad OrgÃ¡nica", style_table_header),
-                    Paragraph("CÃ³digo Usuario", style_table_header),
+                    Paragraph("Unidad Orgánica", style_table_header),
+                    Paragraph("Código Usuario", style_table_header),
                     Paragraph("Nombre del Usuario", style_table_header),
                     Paragraph("Total<br/>Consultas", style_table_header)
                 ]]
@@ -392,26 +418,26 @@ class PDFGeneratorGUI:
                     ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
                 ]))
 
-              ##  story.append(Paragraph(f"DescripciÃ³n: {descripcion}", style_subtitle))
                 story.append(table)
                 story.append(Spacer(1, 12))
 
                 total_desc = df_ger["CANTIDAD DE CONSULTA"].sum()
                 story.append(Paragraph(f"TOTAL {descripcion}: {int(total_desc):,}", style_total))
 
-                doc.build(story)
-                print(f"âœ… PDF generado: {nombre_pdf}")
+                # Se pasa canvasmaker para habilitar "Pág. XX de YY"
+                doc.build(story, canvasmaker=NumberedCanvas)
+                print(f"PDF generado: {nombre_pdf}")
                 contador += 1
 
-            self.status_var.set(f"âœ… {contador} PDF(s) generados en: {carpeta_pdfs}")
+            self.status_var.set(f"{contador} PDF(s) generados en: {carpeta_pdfs}")
             messagebox.showinfo(
-                "Ã‰xito",
-                f"âœ… Se generaron {contador} PDF(s) en:\n{carpeta_pdfs}"
+                "Éxito",
+                f"Se generaron {contador} PDF(s) en:\n{carpeta_pdfs}"
             )
 
         except Exception as e:
-            self.status_var.set(f"âŒ Error: {str(e)}")
-            messagebox.showerror("Error", f"OcurriÃ³ un error:\n{str(e)}")
+            self.status_var.set(f"Error: {str(e)}")
+            messagebox.showerror("Error", f"Ocurrió un error:\n{str(e)}")
 
 
 if __name__ == "__main__":
